@@ -15,3 +15,10 @@ Versions follow [semantic versioning](https://semver.org). Tags carry the bare v
 - Agent detection by branch prefix, co author trailer, label or bot author; the gate enforces for agents and advises
   for people.
 - `ruru audit`, `ruru mutants`, `ruru verify`, `ruru guide`, `ruru man`.
+- `ruru post`: one summary comment updated in place and one review of at most five inline comments, deduplicated
+  across runs; it validates the report, checks the pull request head against the trusted event, and escapes every
+  string. SARIF 2.1.0 (`--sarif`), `::warning` annotations and step outputs in GitHub Actions.
+- The composite action "ruru PR reviewer" and two fork safe workflow templates; ruru runs them on its own pull
+  requests.
+- `ruru mcp`: five tools over stdio for coding agents. A Claude Code plugin with the `ruru` skill, and an opt in Stop
+  hook example.

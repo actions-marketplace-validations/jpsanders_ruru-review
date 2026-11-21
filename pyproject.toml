@@ -10,30 +10,32 @@ authors = [
 maintainers = [
   { name = "James Phillip Sanders", email = "hello@jamesphillipsanders.com" }
 ]
-description = "Start every Python package green: Python 3.15, strict typing, eight checks, CI, releases, a man page and an agent skill wired in."
+description = "A pull request reviewer for code written by AI agents: fail first, mutants on the diff, and a tamper audit of the tests."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.14"
-keywords = ["template", "packaging", "pyproject", "mypy", "pytest", "python-3.15", "man-page", "ai-agents", "claude-code"]
+keywords = ["mutation-testing", "code-review", "pull-request", "ai-agents", "pytest", "github-actions", "mcp", "claude-code", "testing"]
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3.15",
   "Environment :: Console",
   "Operating System :: OS Independent",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Software Development :: Testing",
   "Typing :: Typed",
 ]
 dependencies = []
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "https://github.com/jpsanders/python-package-template"
-Repository = "https://github.com/jpsanders/python-package-template"
-Issues = "https://github.com/jpsanders/python-package-template/issues"
-Changelog = "https://github.com/jpsanders/python-package-template/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/jpsanders/ruru-review"
+Repository = "https://github.com/jpsanders/ruru-review"
+Issues = "https://github.com/jpsanders/ruru-review/issues"
+Changelog = "https://github.com/jpsanders/ruru-review/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ruru",
+  "description": "A pull request reviewer for code written by AI agents: a skill and an MCP server.",
+  "owner": {
+    "name": "James Phillip Sanders",
+    "email": "hello@jamesphillipsanders.com"
+  },
+  "plugins": [
+    {
+      "name": "ruru",
+      "description": "Before your agent says done: fail first, mutants on the diff and a tamper audit of the tests, with a verify loop.",
+      "version": "0.1.0",
+      "source": "./",
+      "category": "development",
+      "homepage": "https://github.com/jpsanders/ruru-review"
+    }
+  ]
+}

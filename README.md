@@ -1,7 +1,6 @@
 # ruru
 
-A pull request reviewer for code written by AI agents. Work in progress toward 1.0.0; the full README, the GitHub
-Action and the agent plugin come in later milestones.
+A pull request reviewer for code written by AI agents. Work in progress toward 1.0.0.
 
 ruru asks three questions of a change, with evidence rather than opinion:
 
@@ -22,6 +21,23 @@ ruru guide                                       # the full manual
 
 The manual is [docs/MANUAL.md](docs/MANUAL.md). ruru needs Python 3.14 or later; the projects it checks can use any
 Python from 3.9 on, through their own interpreter.
+
+## In GitHub Actions
+
+Copy `examples/workflows/ruru.yml` (runs the tests with a read only token, safe for forks) and
+`examples/workflows/ruru-post.yml` (comments from the report, never checks out pull request code) into
+`.github/workflows/`. The manual explains both.
+
+## With an AI agent
+
+In Claude Code:
+
+```text
+/plugin install ruru --marketplace jpsanders/ruru-review
+```
+
+That adds a skill that runs ruru before the agent says a change is done, and an MCP server with `ruru_check`,
+`ruru_survivors`, `ruru_explain`, `ruru_verify` and `ruru_audit`. Other agents follow `AGENTS.md`.
 
 ## Licence
 

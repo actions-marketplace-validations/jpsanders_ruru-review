@@ -1,0 +1,39 @@
+# Template A: runs the pull request's code with a read only token, and uploads the report.
+# Safe for pull requests from forks. Pair it with ruru-post.yml to comment on the pull request.
+name: ruru
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ruru:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: "Install the project and its tests"
+        run: |
+          python -m pip install -e . pytest pytest-cov
+
+      - name: "ruru"
+        uses: jpsanders/ruru-review@main
+        with:
+          report: ruru/ruru-report.json
+
+      - name: "Upload the report for the posting workflow"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruru-report
+          path: ruru/
+          if-no-files-found: ignore

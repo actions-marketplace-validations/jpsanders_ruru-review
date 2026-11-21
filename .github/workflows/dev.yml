@@ -34,12 +34,6 @@ jobs:
     secrets:
       package-repo: ${{ secrets.PKG_REPOSITORY }}
 
-  test_with_db:
-    needs: lint
-    uses: "./.github/workflows/python-tests-with-db.yml"
-    secrets:
-      package-repo: ${{ secrets.PKG_REPOSITORY }}
-
   # Proves the built wheel installs on its own and runs, with no source tree around it.
   package:
     needs: test
@@ -68,3 +62,4 @@ jobs:
           /tmp/clean/bin/ruru --version
           /tmp/clean/bin/ruru guide | head -3
           /tmp/clean/bin/ruru man --raw | head -1
+          echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | /tmp/clean/bin/ruru mcp | grep -q ruru_check

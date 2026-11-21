@@ -79,9 +79,26 @@ def markdown(report: dict[str, Any], limit: int = 15) -> str:
     if rows:
         out += ["", "| Where | Check | What |", "|---|---|---|"]
         for i in rows:
-            what = f"`{i['before']}` to `{i['after']}`: {i['hint']}" if i["check"] == "mutant" else i["hint"]
-            out.append(f"| `{i['file']}:{i['line']}` | {i['check']} {i['rule']} | {escape(what)} |")
+            what = escape(i["hint"])
+            if i["check"] == "mutant":
+                what = f"{code(i['before'])} to {code(i['after'])}: {what}"
+            out.append(
+                f"| {code(i['file'] + ':' + str(i['line']))} | {escape(i['check'] + ' ' + i['rule'])} | {what} |"
+            )
     return "\n".join(out) + "\n"
+
+
+def code(text: str, limit: int = 120) -> str:
+    """
+    Wrap untrusted text in a code span for a Markdown table cell.
+
+    :param text: Any text
+    :param limit: Most characters kept
+    :returns: Inline code with backticks, newlines and pipes neutralised
+    """
+    text = text.replace("`", "'").replace("\r", " ").replace("\n", " ")
+    text = text if len(text) <= limit else text[: limit - 1] + "…"
+    return "`" + text.replace("|", "\\|") + "`"
 
 
 def escape(text: str, limit: int = 300) -> str:

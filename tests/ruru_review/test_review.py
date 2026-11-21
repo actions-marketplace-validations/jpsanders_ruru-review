@@ -171,3 +171,49 @@ def test_not_a_repo(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
 
 
 _ = (sys, git)
+
+
+def test_github_actions_outputs(
+    make_repo: Repo, py: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = make_repo()
+    out, summary = tmp_path / "out", tmp_path / "summary"
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    code = main(
+        [
+            "audit",
+            "--repo",
+            str(repo),
+            "--head",
+            "HEAD",
+            "--json",
+            str(tmp_path / "r.json"),
+            "--sarif",
+            str(tmp_path / "r.sarif"),
+            "--quiet",
+        ]
+    )
+    assert code == 1
+    assert "tamper-high=3" in out.read_text() and "gate=fail" in out.read_text()
+    assert summary.read_text().startswith("<!-- ruru -->")
+    assert json.loads((tmp_path / "r.sarif").read_text())["version"] == "2.1.0"
+    assert "::warning file=tests/test_calc.py" in capsys.readouterr().err
+
+
+def test_selection_keeps_every_test_of_a_line(make_repo: Repo, py: str, tmp_path: Path) -> None:
+    # a weak test runs the line first, a strong one second; selection must keep both (sysmon kept only the first)
+    base = {"src/calc/__init__.py": "def f(n):\n    return n\n", "tests/test_calc.py": "def test_zero():\n    pass\n"}
+    head = {
+        "src/calc/__init__.py": "def f(n):\n    return n * 2\n",
+        "tests/test_calc.py": (
+            "from calc import f\n\n\ndef test_a_weak():\n    assert f(3) is not None\n\n\n"
+            "def test_b_strong():\n    assert f(3) == 6\n"
+        ),
+    }
+    repo = make_repo(base=base, head=head)
+    code, r = check(repo, py, tmp_path, "--head", "HEAD")
+    aor = next(i for i in r["items"] if i["rule"] == "AOR")
+    assert aor["outcome"] == "killed"
+    assert aor["tests"] == ["tests/test_calc.py::test_a_weak", "tests/test_calc.py::test_b_strong"]

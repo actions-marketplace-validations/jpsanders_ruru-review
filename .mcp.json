@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ruru": {
+      "command": "uvx",
+      "args": ["--from", "ruru-review==0.1.0", "ruru", "mcp"]
+    }
+  }
+}

@@ -267,11 +267,16 @@ def baseline(project: Project, tree: Path, use_coverage: bool) -> Baseline:
     if use_coverage and has_pytest_cov(project, tree):
         db = Path(tempfile.mkdtemp(prefix="ruru-cov-")) / ".coverage"
         env["COVERAGE_FILE"] = str(db)
+        # coverage's sysmon core (the default on Python 3.14+) records only the first test to run each line
+        env["COVERAGE_CORE"] = "ctrace"
         src = str(tree / project.src_root)
         extra += [f"--cov={src}", "--cov-context=test", "--cov-report=", "--no-cov-on-fail"]
     proc = run(project.command + extra, tree, env, None)
     if proc.code not in (0, 5):
         raise EnvironmentProblem(f"the baseline test run fails at the head (exit {proc.code}):\n{proc.output[-3000:]}")
+    if db is not None and "no-sysmon-context" in proc.output:
+        note = "coverage could not record per test contexts (sysmon core); every mutant runs the full suite"
+        return Baseline(proc.seconds, None, note)
     if db is not None and db.exists():
         try:
             return Baseline(proc.seconds, read_contexts(db, tree))

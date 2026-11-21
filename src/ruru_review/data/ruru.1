@@ -14,6 +14,8 @@ ruru check   [\-\-base REF] [\-\-head REF] [\-\-mode advise|gate|auto] [\-\-json
 ruru audit   [\-\-base REF] [\-\-head REF] [\-\-mode MODE] [\-\-json PATH] [\-\-markdown PATH]
 ruru mutants [\-\-base REF] [\-\-head REF] [\-\-json\-stdout]
 ruru verify  ID [\-\-base REF] [\-\-head REF] [\-\-test\-command CMD] [\-\-python PATH]
+ruru post    \-\-report PATH [\-\-pr N] [\-\-comment\-cap N] [\-\-repository OWNER/NAME] [\-\-event PATH]
+ruru mcp
 ruru guide
 ruru man [\-\-install] [\-\-raw]
 ruru \-\-version
@@ -29,9 +31,13 @@ Runs all three checks and prints a score card, then the findings, most serious f
 .IP \(bu 2
 \fB\-\-json PATH\fR writes the report an agent works from (see Report).
 .IP \(bu 2
-\fB\-\-markdown PATH\fR writes the summary as Markdown. Inside GitHub Actions the same summary is appended to the job
+\fB\-\-markdown PATH\fR writes the summary as Markdown.
+.IP \(bu 2
+\fB\-\-sarif PATH\fR writes SARIF 2.1.0 for GitHub code scanning.
+.IP \(bu 2
+Inside GitHub Actions (\fBGITHUB_ACTIONS=true\fR) ruru also appends the summary to the job summary, writes the outputs
 .PP
-summary.
+\fBscore\fR, \fBsurvived\fR, \fBtamper\-high\fR, \fBgate\fR and \fBreport\fR, and marks up to 10 findings on the diff with \fB::warning\fR annotations.
 .IP \(bu 2
 \fB\-\-mode\fR picks what a failed gate does: \fBgate\fR fails the run, \fBadvise\fR never fails it, \fBauto\fR (the default) gates
 .PP
@@ -61,6 +67,31 @@ Lists the mutants of the change, with their ids, without running anything.
 .SS verify ID
 .PP
 Reruns one mutant, by the id a report gave it, against the tests as they are now. Exit 0 when the tests kill it, 1 when it still survives, 2 when the id is not in the change (the line moved or changed; run \fBruru mutants\fR).
+.SS post
+.PP
+Posts a report to its pull request: one summary comment, updated in place on every run (it carries the hidden marker \fB<!\-\- ruru \-\->\fR), and one review with at most \fB\-\-comment\-cap\fR (default 5) inline comments, most valuable first: high tamper findings, then survivors in the most changed files, then fail first findings. A finding already commented on in an earlier run is not posted again. Comments describe the gap and hint at a test; they never propose code.
+.PP
+\fBpost\fR is built to run with a write token in a job that never checks out pull request code. It reads the token from \fBGITHUB_TOKEN\fR and the trusted event from \fBGITHUB_EVENT_PATH\fR, and trusts nothing in the report: it checks the schema, drops malformed items and paths that climb out of the repository, checks that the pull request's head is the commit the event names and that the report was made for that commit, and escapes and truncates every string (no HTML, no mentions, no table breaks). Under \fBworkflow_run\fR, a pull request from a fork is not listed in the event, so the number comes from the artifact through \fB\-\-pr\fR, and is only accepted when that pull request's head is the event's commit. Exit 2 on any mismatch.
+.SS mcp
+.PP
+Serves five tools over stdio for coding agents (Model Context Protocol, JSON-RPC 2.0, one message per line):
+.TP
+\fBruru_check\fR
+all three checks; returns the gate, the counts and a to do list
+.TP
+\fBruru_survivors\fR
+survived and not covered mutants from the last check
+.TP
+\fBruru_explain\fR
+one item with the source lines around it and the tests that ran
+.TP
+\fBruru_verify\fR
+rerun one mutant against the current tests
+.TP
+\fBruru_audit\fR
+the static tamper audit only
+.PP
+Each takes \fBrepo\fR (default: the server's working folder); the check tools also take \fBbase\fR, \fBhead\fR, \fBpython\fR and \fBtest_command\fR.
 .SS guide, man
 .PP
 \fBguide\fR prints this manual. \fBman\fR shows it as a man page; \fBman \-\-install\fR puts it where \fBman ruru\fR finds it.
@@ -224,6 +255,53 @@ The gate fails on any high tamper finding, on any new or changed test that passe
 Before an agent says a change is done:
 .PP
 1. \fBruru check \-\-json ruru\-report.json\fR 2. For each \fBsurvived\fR item, write a test that fails with the mutant and passes without it; for each \fBpasses_without_change\fR, assert what the change adds; for each tamper finding, put the test back. 3. \fBruru verify <id>\fR for each survivor until it is killed. 4. Never weaken, skip or delete a test to make ruru pass.
+.SH GITHUB ACTION
+.PP
+\fBaction.yml\fR at the root of \fBjpsanders/ruru\-review\fR is a composite action, "ruru PR reviewer". It installs ruru on its own Python 3.14 without touching the project's \fBPATH\fR, then runs \fBruru check\fR with the project's interpreter.
+.TP
+\fBrun\fR
+\fBcheck\fR \fBcheck\fR runs the tests (read only); \fBpost\fR comments from a report
+.TP
+\fBbase\fR
+\fBorigin/<base branch>\fR target branch
+.TP
+\fBmode\fR
+\fBauto\fR \fBadvise\fR, \fBgate\fR or \fBauto\fR
+.TP
+\fBmax\-mutants\fR, \fBtime\-budget\fR
+60, 600 the mutant budget
+.TP
+\fBtest\-command\fR, \fBpython\fR
+pytest, \fBpython\fR on \fBPATH\fR how to run the project's tests
+.TP
+\fBpost\fR
+\fBfalse\fR also comment from the same job; same repository pull requests only
+.TP
+\fBreport\fR
+\fBruru\-report.json\fR report path
+.TP
+\fBpr\fR
+ \fBpost\fR only: the number from the artifact
+.TP
+\fBcomment\-cap\fR
+5 most inline comments
+.PP
+Outputs: \fBscore\fR, \fBsurvived\fR, \fBtamper\-high\fR, \fBgate\fR, \fBreport\fR. The job fails when the gate fails and on exit 2.
+.PP
+\fBNever run pull request code with a write token.\fR Two workflows, both in \fBexamples/workflows/\fR:
+.IP \(bu 2
+\fBruru.yml\fR (Template A) runs on \fBpull_request\fR with \fBcontents: read\fR: checkout with \fBfetch\-depth: 0\fR, install the
+.PP
+project and pytest, run the action, upload the report as an artifact. Safe for forks.
+.IP \(bu 2
+\fBruru\-post.yml\fR (Template B) runs on \fBworkflow_run\fR when A completes, with \fBpull\-requests: write\fR. It downloads the
+.PP
+artifact and runs the action with \fBrun: post\fR. It never checks out the pull request.
+.PP
+A repository that only takes pull requests from its own branches can use Template A alone with \fBpost: true\fR and \fBpull\-requests: write\fR.
+.SH CLAUDE CODE PLUGIN
+.PP
+The repository is a Claude Code plugin and marketplace. It adds the \fBruru\fR skill, which tells the agent to run \fBruru_check\fR before it says a change is done, write a test for each survivor, verify it, and never weaken a test, and it starts the MCP server through \fBuvx\fR. \fBdocs/hooks/stop\-hook.md\fR shows an opt in Stop hook that keeps the agent working while the gate fails. Agents other than Claude Code get the same loop from \fBAGENTS.md\fR and \fBruru check \-\-json\fR.
 .SH CONFIGURATION
 .PP
 In the checked project's \fBpyproject.toml\fR:
@@ -237,6 +315,7 @@ tests = ["tests"]
 max\-mutants = 60
 time\-budget = 600
 workers = 2
+comment\-cap = 5
 operators = ["ROR", "NEG", "RET", "AOR", "LCR", "CRP", "AUG", "BRK", "SDL"]
 arid = ["metrics.*", "tracer.*"]
 

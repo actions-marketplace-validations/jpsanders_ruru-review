@@ -1,0 +1,147 @@
+name: "ruru PR reviewer"
+description: "Review pull requests written by AI agents: fail first, mutants on the diff, a tamper audit of the tests."
+author: "James Phillip Sanders"
+branding:
+  icon: "eye"
+  color: "orange"
+
+inputs:
+  run:
+    description: "check (run the tests, read only) or post (comment from a report; never touches PR code)"
+    default: "check"
+  base:
+    description: "Target branch ref (default: origin/<the pull request's base branch>)"
+    default: ""
+  mode:
+    description: "advise, gate or auto (gate agent pull requests, advise on the rest)"
+    default: "auto"
+  max-mutants:
+    description: "Most mutants to run"
+    default: "60"
+  time-budget:
+    description: "Seconds for mutants"
+    default: "600"
+  test-command:
+    description: "Test command (default: PYTHON -m pytest)"
+    default: ""
+  python:
+    description: "The project's interpreter, with the project and pytest installed (default: python on PATH)"
+    default: ""
+  post:
+    description: "For same repository pull requests only: also post the comment and review from this job"
+    default: "false"
+  report:
+    description: "Report path: written by check, read by post"
+    default: "ruru-report.json"
+  pr:
+    description: "post only: the pull request number from the artifact (checked against the trusted event)"
+    default: ""
+  comment-cap:
+    description: "Most inline comments"
+    default: "5"
+  github-token:
+    description: "Token for post"
+    default: ${{ github.token }}
+
+outputs:
+  score:
+    description: "Diff mutation score from 0 to 1, empty when no mutant ran"
+    value: ${{ steps.check.outputs.score }}
+  survived:
+    description: "Survived mutants"
+    value: ${{ steps.check.outputs.survived }}
+  tamper-high:
+    description: "High severity tamper findings"
+    value: ${{ steps.check.outputs.tamper-high }}
+  gate:
+    description: "pass, fail or advise"
+    value: ${{ steps.check.outputs.gate }}
+  report:
+    description: "Path of the JSON report"
+    value: ${{ steps.check.outputs.report }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Find the project's interpreter before setting up ruru's"
+      id: project
+      shell: bash
+      env:
+        GIVEN: ${{ inputs.python }}
+      run: |
+        if [ -n "$GIVEN" ]; then py="$GIVEN"; else py="$(command -v python || command -v python3)"; fi
+        echo "python=$py" >> "$GITHUB_OUTPUT"
+
+    - name: "Set up Python 3.14 for ruru, leaving the project's PATH alone"
+      id: py
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.14"
+        update-environment: false
+
+    - name: "Install ruru from this action's own files"
+      shell: bash
+      env:
+        PY: ${{ steps.py.outputs.python-path }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        "$PY" -m venv "$RUNNER_TEMP/ruru"
+        "$RUNNER_TEMP/ruru/bin/pip" install --quiet "$ACTION_PATH"
+        echo "RURU=$RUNNER_TEMP/ruru/bin/ruru" >> "$GITHUB_ENV"
+
+    - name: "ruru check"
+      id: check
+      if: inputs.run == 'check'
+      shell: bash
+      env:
+        BASE: ${{ inputs.base || format('origin/{0}', github.base_ref) }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        MODE: ${{ inputs.mode }}
+        MAX: ${{ inputs.max-mutants }}
+        BUDGET: ${{ inputs.time-budget }}
+        TEST_COMMAND: ${{ inputs.test-command }}
+        PROJECT_PY: ${{ steps.project.outputs.python }}
+        REPORT: ${{ inputs.report }}
+        RURU_PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        RURU_PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        set +e
+        args=(check --base "$BASE" --head "$HEAD_SHA" --mode "$MODE" --max-mutants "$MAX" --time-budget "$BUDGET"
+              --python "$PROJECT_PY" --json "$REPORT" --sarif "${REPORT%.json}.sarif")
+        if [ -n "$TEST_COMMAND" ]; then args+=(--test-command "$TEST_COMMAND"); fi
+        "$RURU" "${args[@]}"
+        code=$?
+        printf '{"number": %s, "head_sha": "%s"}\n' "${PR_NUMBER:-0}" "$HEAD_SHA" > "$(dirname "$REPORT")/ruru-pr.json"
+        echo "RURU_EXIT=$code" >> "$GITHUB_ENV"
+        if [ $code -eq 2 ]; then exit 2; fi
+        exit 0
+
+    - name: "ruru post (same repository pull requests)"
+      if: >-
+        inputs.run == 'check' && inputs.post == 'true' &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        REPORT: ${{ inputs.report }}
+        CAP: ${{ inputs.comment-cap }}
+      run: '"$RURU" post --report "$REPORT" --comment-cap "$CAP"'
+
+    - name: "ruru post (from a report artifact)"
+      if: inputs.run == 'post'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        REPORT: ${{ inputs.report }}
+        CAP: ${{ inputs.comment-cap }}
+        PR: ${{ inputs.pr }}
+      run: |
+        args=(post --report "$REPORT" --comment-cap "$CAP")
+        if [[ "$PR" =~ ^[0-9]+$ ]]; then args+=(--pr "$PR"); fi
+        "$RURU" "${args[@]}"
+
+    - name: "Fail the job when the gate failed"
+      if: inputs.run == 'check'
+      shell: bash
+      run: '[ "${RURU_EXIT:-0}" != "1" ]'

@@ -17,7 +17,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from ruru_review import __version__, engine, gitio, mutants, pyast, render, runner
+from ruru_review import __version__, engine, github, gitio, mcp, mutants, pyast, render, runner
 
 PROG = "ruru"
 
@@ -65,10 +65,21 @@ def _write(path: str | None, text: str) -> None:
 def _deliver(report: dict[str, Any], args: argparse.Namespace) -> None:
     _write(args.json, json.dumps(report, indent=2, sort_keys=True) + "\n")
     _write(args.markdown, render.markdown(report))
-    summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary and not args.json_stdout:
-        with open(summary, "a", encoding="utf-8") as fh:
-            fh.write(render.markdown(report))
+    _write(getattr(args, "sarif", None), json.dumps(github.sarif(report), indent=2) + "\n")
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary:
+            with open(summary, "a", encoding="utf-8") as fh:
+                fh.write(render.markdown(report))
+        outputs = os.environ.get("GITHUB_OUTPUT")
+        if outputs:
+            s = report["summary"]
+            score = s["mutants"]["score"]
+            with open(outputs, "a", encoding="utf-8") as fh:
+                fh.write(f"score={'' if score is None else score}\nsurvived={s['mutants']['survived']}\n")
+                fh.write(f"tamper-high={s['tamper']['high']}\ngate={s['gate']['result']}\nreport={args.json or ''}\n")
+        for line in github.annotations(report):
+            print(line, file=sys.stderr)
     if args.json_stdout:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
@@ -216,6 +227,41 @@ def cmd_man(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_post(args: argparse.Namespace) -> int:
+    """
+    Post a report to its pull request: the summary comment and one review. Never checks out pull request code.
+
+    :param args: Parsed arguments
+    :returns: 0 posted, 2 on any mismatch or refusal
+    :raises PostError: Caught here, for a missing token or event
+    """
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    repo = args.repository or os.environ.get("GITHUB_REPOSITORY", "")
+    event_path = args.event or os.environ.get("GITHUB_EVENT_PATH")
+    try:
+        if not token:
+            raise github.PostError("set GITHUB_TOKEN")
+        if not event_path:
+            raise github.PostError("no event: run in GitHub Actions or pass --event")
+        event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        done = github.post(Path(args.report), github.GitHub(token, repo), event, args.pr, args.comment_cap)
+    except (github.PostError, OSError, ValueError, KeyError, TypeError) as exc:
+        print(f"ruru: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(done))
+    return 0
+
+
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """
+    Serve the MCP tools over stdio.
+
+    :param args: Parsed arguments
+    :returns: Exit code
+    """
+    return mcp.serve()
+
+
 def build_parser() -> argparse.ArgumentParser:
     """
     Build the argument parser with every command.
@@ -244,6 +290,7 @@ def build_parser() -> argparse.ArgumentParser:
     def outputs(p: argparse.ArgumentParser) -> None:
         p.add_argument("--json", metavar="PATH", help="write the JSON report (schema ruru.report/1)")
         p.add_argument("--markdown", metavar="PATH", help="write the Markdown summary")
+        p.add_argument("--sarif", metavar="PATH", help="write SARIF 2.1.0 for code scanning")
         p.add_argument(
             "--mode",
             choices=["advise", "gate", "auto"],
@@ -270,6 +317,13 @@ def build_parser() -> argparse.ArgumentParser:
     verify = add("verify", cmd_verify, "rerun one mutant against the current tests")
     verify.add_argument("id", help="the mutant id from a report")
     testing(verify)
+    post = add("post", cmd_post, "post a report to its pull request (summary comment and one review)", change=False)
+    post.add_argument("--report", required=True, help="the JSON report from the read only run")
+    post.add_argument("--pr", type=int, help="pull request number from the artifact, for workflow_run (checked)")
+    post.add_argument("--comment-cap", type=int, default=5, metavar="N", help="most inline comments (default 5)")
+    post.add_argument("--repository", help="owner/name (default: GITHUB_REPOSITORY)")
+    post.add_argument("--event", help="event payload file (default: GITHUB_EVENT_PATH)")
+    add("mcp", cmd_mcp, "serve the MCP tools over stdio, for coding agents", change=False)
     add("guide", cmd_guide, "print the full manual, for people and agents", change=False)
     man = add("man", cmd_man, "show the man page", change=False)
     man.add_argument("--install", action="store_true", help=f"install it so `man {PROG}` works")

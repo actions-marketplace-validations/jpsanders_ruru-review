@@ -19,6 +19,8 @@ ruru check   [--base REF] [--head REF] [--mode advise|gate|auto] [--json PATH] [
 ruru audit   [--base REF] [--head REF] [--mode MODE] [--json PATH] [--markdown PATH]
 ruru mutants [--base REF] [--head REF] [--json-stdout]
 ruru verify  ID [--base REF] [--head REF] [--test-command CMD] [--python PATH]
+ruru post    --report PATH [--pr N] [--comment-cap N] [--repository OWNER/NAME] [--event PATH]
+ruru mcp
 ruru guide
 ruru man [--install] [--raw]
 ruru --version
@@ -38,8 +40,11 @@ commits.
 Runs all three checks and prints a score card, then the findings, most serious first. Progress lines go to stderr.
 
 - `--json PATH` writes the report an agent works from (see Report).
-- `--markdown PATH` writes the summary as Markdown. Inside GitHub Actions the same summary is appended to the job
-  summary.
+- `--markdown PATH` writes the summary as Markdown.
+- `--sarif PATH` writes SARIF 2.1.0 for GitHub code scanning.
+- Inside GitHub Actions (`GITHUB_ACTIONS=true`) ruru also appends the summary to the job summary, writes the outputs
+  `score`, `survived`, `tamper-high`, `gate` and `report`, and marks up to 10 findings on the diff with `::warning`
+  annotations.
 - `--mode` picks what a failed gate does: `gate` fails the run, `advise` never fails it, `auto` (the default) gates
   changes written by an agent and advises on the rest.
 - `--refactor` says the change is a refactor: tests should stay green on both sides, so fail first gives advice only.
@@ -64,6 +69,36 @@ Lists the mutants of the change, with their ids, without running anything.
 
 Reruns one mutant, by the id a report gave it, against the tests as they are now. Exit 0 when the tests kill it, 1
 when it still survives, 2 when the id is not in the change (the line moved or changed; run `ruru mutants`).
+
+### post
+
+Posts a report to its pull request: one summary comment, updated in place on every run (it carries the hidden marker
+`<!-- ruru -->`), and one review with at most `--comment-cap` (default 5) inline comments, most valuable first: high
+tamper findings, then survivors in the most changed files, then fail first findings. A finding already commented on in
+an earlier run is not posted again. Comments describe the gap and hint at a test; they never propose code.
+
+`post` is built to run with a write token in a job that never checks out pull request code. It reads the token from
+`GITHUB_TOKEN` and the trusted event from `GITHUB_EVENT_PATH`, and trusts nothing in the report: it checks the
+schema, drops malformed items and paths that climb out of the repository, checks that the pull request's head is the
+commit the event names and that the report was made for that commit, and escapes and truncates every string
+(no HTML, no mentions, no table breaks). Under `workflow_run`, a pull request from a fork is not listed in the
+event, so the number comes from the artifact through `--pr`, and is only accepted when that pull request's head is
+the event's commit. Exit 2 on any mismatch.
+
+### mcp
+
+Serves five tools over stdio for coding agents (Model Context Protocol, JSON-RPC 2.0, one message per line):
+
+| Tool | What it does |
+|---|---|
+| `ruru_check` | all three checks; returns the gate, the counts and a to do list |
+| `ruru_survivors` | survived and not covered mutants from the last check |
+| `ruru_explain` | one item with the source lines around it and the tests that ran |
+| `ruru_verify` | rerun one mutant against the current tests |
+| `ruru_audit` | the static tamper audit only |
+
+Each takes `repo` (default: the server's working folder); the check tools also take `base`, `head`, `python` and
+`test_command`.
 
 ### guide, man
 
@@ -200,6 +235,43 @@ Before an agent says a change is done:
 3. `ruru verify <id>` for each survivor until it is killed.
 4. Never weaken, skip or delete a test to make ruru pass.
 
+## GitHub Action
+
+`action.yml` at the root of `jpsanders/ruru-review` is a composite action, "ruru PR reviewer". It installs ruru on
+its own Python 3.14 without touching the project's `PATH`, then runs `ruru check` with the project's interpreter.
+
+| Input | Default | Meaning |
+|---|---|---|
+| `run` | `check` | `check` runs the tests (read only); `post` comments from a report |
+| `base` | `origin/<base branch>` | target branch |
+| `mode` | `auto` | `advise`, `gate` or `auto` |
+| `max-mutants`, `time-budget` | 60, 600 | the mutant budget |
+| `test-command`, `python` | pytest, `python` on `PATH` | how to run the project's tests |
+| `post` | `false` | also comment from the same job; same repository pull requests only |
+| `report` | `ruru-report.json` | report path |
+| `pr` | | `post` only: the number from the artifact |
+| `comment-cap` | 5 | most inline comments |
+
+Outputs: `score`, `survived`, `tamper-high`, `gate`, `report`. The job fails when the gate fails and on exit 2.
+
+**Never run pull request code with a write token.** Two workflows, both in `examples/workflows/`:
+
+- `ruru.yml` (Template A) runs on `pull_request` with `contents: read`: checkout with `fetch-depth: 0`, install the
+  project and pytest, run the action, upload the report as an artifact. Safe for forks.
+- `ruru-post.yml` (Template B) runs on `workflow_run` when A completes, with `pull-requests: write`. It downloads the
+  artifact and runs the action with `run: post`. It never checks out the pull request.
+
+A repository that only takes pull requests from its own branches can use Template A alone with `post: true` and
+`pull-requests: write`.
+
+## Claude Code plugin
+
+The repository is a Claude Code plugin and marketplace. It adds the `ruru` skill, which tells the agent to run
+`ruru_check` before it says a change is done, write a test for each survivor, verify it, and never weaken a test,
+and it starts the MCP server through `uvx`. `docs/hooks/stop-hook.md` shows an opt in Stop hook that keeps the agent
+working while the gate fails. Agents other than Claude Code get the same loop from `AGENTS.md` and
+`ruru check --json`.
+
 ## Configuration
 
 In the checked project's `pyproject.toml`:
@@ -213,6 +285,7 @@ tests = ["tests"]
 max-mutants = 60
 time-budget = 600
 workers = 2
+comment-cap = 5
 operators = ["ROR", "NEG", "RET", "AOR", "LCR", "CRP", "AUG", "BRK", "SDL"]
 arid = ["metrics.*", "tracer.*"]
 
