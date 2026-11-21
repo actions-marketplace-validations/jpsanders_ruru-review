@@ -17,7 +17,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.14"
 keywords = ["mutation-testing", "code-review", "pull-request", "ai-agents", "pytest", "github-actions", "mcp", "claude-code", "testing"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.14",
