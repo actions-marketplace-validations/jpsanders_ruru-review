@@ -58,6 +58,7 @@ ruru = "ruru_review.cli:main"
 
 [tool.setuptools_scm]
 fallback_version = "0.0.0"
+version_file = "src/ruru_review/_version.py"
 
 [tool.setuptools.packages.find]
 where = ["src"]
