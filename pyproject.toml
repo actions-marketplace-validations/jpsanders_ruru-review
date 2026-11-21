@@ -52,7 +52,7 @@ dev = [
 ]
 
 [project.scripts]
-ruru-review = "ruru_review.cli:main"
+ruru = "ruru_review.cli:main"
 
 [tool.setuptools_scm]
 fallback_version = "0.0.0"

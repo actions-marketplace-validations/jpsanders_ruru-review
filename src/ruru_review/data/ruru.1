@@ -1,0 +1,264 @@
+.TH RURU 1 "" "ruru" "User Commands"
+.PP
+A pull request reviewer for code written by AI agents. ruru asks three questions of a change and answers each with evidence, not opinion:
+.PP
+1. \fBTamper audit.\fR Did the change weaken or bypass the tests? 2. \fBFail first.\fR Do the new and changed tests fail without the change? 3. \fBMutants on the diff.\fR Would the tests catch a bug in the lines that changed?
+.PP
+Every check is deterministic. ruru calls no model, needs no API key, and your code never leaves the machine or the CI runner. Your own coding agent reads what ruru finds (\fB\-\-json\fR), writes the missing tests, and ruru verifies them.
+.SH SYNOPSIS
+.RS 4
+.nf
+ruru check   [\-\-base REF] [\-\-head REF] [\-\-mode advise|gate|auto] [\-\-json PATH] [\-\-markdown PATH]
+             [\-\-max\-mutants N] [\-\-time\-budget S] [\-\-workers N] [\-\-test\-command CMD] [\-\-python PATH]
+             [\-\-refactor] [\-\-label NAME] [\-\-quiet] [\-\-json\-stdout] [\-\-repo PATH]
+ruru audit   [\-\-base REF] [\-\-head REF] [\-\-mode MODE] [\-\-json PATH] [\-\-markdown PATH]
+ruru mutants [\-\-base REF] [\-\-head REF] [\-\-json\-stdout]
+ruru verify  ID [\-\-base REF] [\-\-head REF] [\-\-test\-command CMD] [\-\-python PATH]
+ruru guide
+ruru man [\-\-install] [\-\-raw]
+ruru \-\-version
+.fi
+.RE
+.SH THE CHANGE
+.PP
+The base is the merge base of the target branch and the head. The target branch is \fB\-\-base\fR, then \fB[tool.ruru] base\fR, then origin's HEAD, \fBmain\fR or \fBmaster\fR. The head is \fB\-\-head\fR (in CI, the pull request's head commit), or the working tree when \fB\-\-head\fR is left out, uncommitted and untracked files included, so an agent can check its work before it commits.
+.SH COMMANDS
+.SS check
+.PP
+Runs all three checks and prints a score card, then the findings, most serious first. Progress lines go to stderr.
+.IP \(bu 2
+\fB\-\-json PATH\fR writes the report an agent works from (see Report).
+.IP \(bu 2
+\fB\-\-markdown PATH\fR writes the summary as Markdown. Inside GitHub Actions the same summary is appended to the job
+.PP
+summary.
+.IP \(bu 2
+\fB\-\-mode\fR picks what a failed gate does: \fBgate\fR fails the run, \fBadvise\fR never fails it, \fBauto\fR (the default) gates
+.PP
+changes written by an agent and advises on the rest.
+.IP \(bu 2
+\fB\-\-refactor\fR says the change is a refactor: tests should stay green on both sides, so fail first gives advice only.
+.IP \(bu 2
+\fB\-\-max\-mutants N\fR (default 60) and \fB\-\-time\-budget S\fR (default 600) cap the mutant run. Over the cap, ruru keeps the
+.PP
+most valuable operators first and breaks ties with a shuffle seeded by the head SHA, so reruns on the same commit choose the same mutants.
+.IP \(bu 2
+\fB\-\-workers N\fR (default 2) runs mutants in that many git worktrees at once.
+.IP \(bu 2
+\fB\-\-python PATH\fR is the project's interpreter. Without it ruru uses \fB.venv/bin/python\fR, \fBvenv/bin/python\fR, the active
+.PP
+virtualenv, then \fBpython3\fR. The project can use any Python from 3.9 on; ruru itself needs 3.14.
+.IP \(bu 2
+\fB\-\-test\-command CMD\fR replaces \fBPYTHON \-m pytest\fR. It must accept pytest's arguments.
+.IP \(bu 2
+\fB\-\-label NAME\fR passes a pull request label for agent detection; repeat it for several.
+.SS audit
+.PP
+Only the tamper audit. Static and fast: nothing is installed and no test runs.
+.SS mutants
+.PP
+Lists the mutants of the change, with their ids, without running anything.
+.SS verify ID
+.PP
+Reruns one mutant, by the id a report gave it, against the tests as they are now. Exit 0 when the tests kill it, 1 when it still survives, 2 when the id is not in the change (the line moved or changed; run \fBruru mutants\fR).
+.SS guide, man
+.PP
+\fBguide\fR prints this manual. \fBman\fR shows it as a man page; \fBman \-\-install\fR puts it where \fBman ruru\fR finds it.
+.SH THE THREE CHECKS
+.SS Tamper audit
+.PP
+ruru compares the base and head versions of every changed test module, \fBconftest.py\fR, test and coverage configuration, CI workflow and source file. Each finding is high severity unless it says otherwise.
+.TP
+\fBtest\-removed\fR
+a test function that existed on the base is gone
+.TP
+\fBassertion\-removed\fR
+a test still exists but asserts less
+.TP
+\fBassertion\-loosened\fR
+exact assertions became weaker: \fB==\fR to \fBassert x\fR, \fBis not None\fR or \fBin\fR;
+.TP
+
+\fBassertEqual\fR to \fBassertTrue\fR; \fBraises(KeyError)\fR to \fBraises(Exception)\fR
+.TP
+\fBassert\-true\fR
+a test now asserts \fBTrue\fR
+.TP
+\fBapprox\-widened\fR
+a \fBpytest.approx\fR tolerance grew
+.TP
+\fBcases\-removed\fR
+a \fBparametrize\fR list lost cases
+.TP
+\fBskip\-added\fR
+a new \fBskip\fR, \fBskipif\fR, \fBxfail\fR, \fBpytest.skip()\fR, \fBunittest.skip\fR, \fBimportorskip\fR or \fBpytestmark\fR
+.TP
+\fBempty\-test\fR
+a new test asserts nothing and calls nothing
+.TP
+\fBassertion\-in\-try\fR
+assertions were wrapped in \fBtry\fR/\fBexcept\fR
+.TP
+\fBexcept\-pass\fR
+a test swallows an exception with \fBpass\fR
+.TP
+\fBharness\-hook\fR
+a \fBconftest.py\fR gained a hook that can change what runs, such as \fBpytest_collection_modifyitems\fR
+.TP
+\fBaddopts\-deselect\fR
+test options gained \fB\-k\fR, \fB\-\-deselect\fR, \fB\-\-ignore\fR or \fB\-p no:\fR
+.TP
+\fBcoverage\-omit\fR, \fBcoverage\-lowered\fR
+coverage leaves code out, or its floor went down
+.TP
+\fBstartup\-hook\fR
+a new \fBsitecustomize.py\fR or \fBusercustomize.py\fR
+.TP
+\fBci\-ignores\-failure\fR
+a CI line gained \fB\e \e true\fR or \fBcontinue\-on\-error: true\fR
+.TP
+\fBno\-cover\-added\fR (medium)
+source gained \fB# pragma: no cover\fR
+.PP
+When a change touches only tests and weakens them, the summary says so (\fBtests_only_weakening\fR).
+.SS Fail first
+.PP
+ruru finds the test functions the change adds or edits, comparing each function's syntax tree by its qualified name, so a moved function is not a changed one. It runs them at the head, then in a worktree at the base with the head's test files laid over it. Imports of names that do not exist on the base become placeholders that fail when used, so one new name does not hide every other test in the file.
+.TP
+\fBproves_change\fR
+fails on the base, passes at the head
+.TP
+\fBneeds_new_code\fR
+fails on the base because it uses code the change adds
+.TP
+\fBpasses_without_change\fR
+passes on both sides: it does not prove the change (a finding)
+.TP
+\fBfails_on_head\fR
+does not pass at the head; reported, not scored
+.TP
+\fBnot_run\fR
+skipped or not collected
+.SS Mutants on the diff
+.PP
+ruru parses each changed source file and mutates only syntax that touches an added or modified line. Each mutant is one small bug:
+.TP
+\fBROR\fR
+comparison: \fB<\fR and \fB<=\fR, \fB>\fR and \fB>=\fR, \fB==\fR and \fB!=\fR, \fBis\fR and \fBis not\fR, \fBin\fR and \fBnot in\fR
+.TP
+\fBNEG\fR
+condition: \fBif c\fR to \fBif not (c)\fR, \fBwhile c\fR likewise, an existing \fBnot\fR removed
+.TP
+\fBRET\fR
+\fBreturn x\fR to \fBreturn None\fR
+.TP
+\fBAOR\fR
+arithmetic: \fB+\fR and \fB\-\fR, \fB*\fR and \fB/\fR, \fB//\fR to \fB/\fR, \fB%\fR to \fB*\fR, \fB**\fR to \fB*\fR
+.TP
+\fBLCR\fR
+boolean: \fBand\fR and \fBor\fR
+.TP
+\fBCRP\fR
+constants: \fBn\fR to \fBn + 1\fR, \fB0\fR and \fB1\fR swapped, \fBTrue\fR and \fBFalse\fR, a non empty string to \fB""\fR
+.TP
+\fBAUG\fR
+\fB+=\fR and \fB\-=\fR, \fB*=\fR and \fB/=\fR
+.TP
+\fBBRK\fR
+\fBbreak\fR and \fBcontinue\fR
+.TP
+\fBSDL\fR
+a call statement replaced by \fBpass\fR
+.PP
+\fBNever mutated\fR (arid code): logging and \fBprint\fR calls, \fBwarnings.warn\fR, docstrings, annotations and default values, \fB__repr__\fR and \fB__str__\fR, \fBif __name__ == "__main__":\fR blocks, \fBassert\fR and imports in source, \fBraise NotImplementedError\fR, the text of f strings, \fB__all__\fR and \fB__version__\fR. A line ending in \fB# ruru: ignore\fR is skipped; \fB# ruru: ignore[ROR,CRP]\fR skips only those operators. \fB[tool.ruru] arid\fR adds call name patterns such as \fBmetrics.*\fR.
+.PP
+\fBHow mutants run.\fR ruru makes one git worktree at the head per worker. Before any mutant it runs an \fBimport check\fR: the project's interpreter, with the worktree's \fBsrc\fR (or root) first on \fBPYTHONPATH\fR, must import each changed package from the worktree. If an installed copy wins, every mutant would survive, so ruru stops with exit 2 and says why. Then a \fBbaseline\fR run of the whole suite must pass. With pytest-cov installed in the project, the baseline also records which tests execute which lines, and each mutant runs only those tests; without it, each mutant runs the full suite. Each mutant runs with \fB\-x \-q \-p no:cacheprovider\fR and a timeout of 5 times the baseline (at least 10 seconds); on timeout the whole process group is killed.
+.TP
+\fBkilled\fR
+a test failed
+.TP
+\fBtimeout\fR
+the tests hung; counts as killed
+.TP
+\fBsurvived\fR
+every selected test passed: a gap in the tests (a finding)
+.TP
+\fBnot_covered\fR
+no test executes the line (a finding, not scored)
+.TP
+\fBskipped\fR
+over the mutant cap or the time budget
+.PP
+The \fBscore\fR is killed and timed out mutants over all that ran.
+.SH AGENTS AND THE GATE
+.PP
+A change counts as an agent's when its pull request author is a listed bot (\fBRURU_PR_AUTHOR\fR), when a commit carries a listed co author trailer, when the branch starts with \fBclaude/\fR, \fBcopilot/\fR, \fBcodex/\fR, \fBcursor/\fR or \fBdevin/\fR (\fBGITHUB_HEAD_REF\fR in Actions, else the current branch), or when it has an \fBagent\fR label (\fB\-\-label\fR, or \fBRURU_PR_LABELS\fR, comma separated). Every list lives in \fB[tool.ruru.agents]\fR.
+.PP
+The gate fails on any high tamper finding, on any new or changed test that passes without the change (unless \fB\-\-refactor\fR), or on a mutation score under 70% with at least 5 mutants run. In \fBauto\fR mode it is enforced for agent changes only; for people it gives the same findings as advice.
+.SH REPORT
+.PP
+\fB\-\-json\fR writes schema \fBruru.report/1\fR. \fBsummary\fR holds the counts, the score and the gate's result and reasons. \fBitems\fR holds one entry per finding or mutant, most serious first:
+.RS 4
+.nf
+{
+  "id": "ROR\-822e815b28",
+  "check": "mutant",
+  "file": "src/calc/__init__.py",
+  "line": 15,
+  "end_line": 15,
+  "rule": "ROR",
+  "before": "pct > 100",
+  "after": "(pct >= 100)",
+  "tests": ["tests/test_calc.py::test_discount_runs"],
+  "outcome": "survived",
+  "severity": "high",
+  "side": "RIGHT",
+  "hint": "add a test at the boundary of this comparison, where < and <= (or == and !=) give different answers"
+}
+.fi
+.RE
+.PP
+\fBcheck\fR is \fBtamper\fR, \fBfail_first\fR or \fBmutant\fR. Two runs on the same commit write the same report.
+.SH THE AGENT LOOP
+.PP
+Before an agent says a change is done:
+.PP
+1. \fBruru check \-\-json ruru\-report.json\fR 2. For each \fBsurvived\fR item, write a test that fails with the mutant and passes without it; for each \fBpasses_without_change\fR, assert what the change adds; for each tamper finding, put the test back. 3. \fBruru verify <id>\fR for each survivor until it is killed. 4. Never weaken, skip or delete a test to make ruru pass.
+.SH CONFIGURATION
+.PP
+In the checked project's \fBpyproject.toml\fR:
+.RS 4
+.nf
+[tool.ruru]
+base = "main"
+test\-command = "python \-m pytest \-p no:randomly"
+src = "src"
+tests = ["tests"]
+max\-mutants = 60
+time\-budget = 600
+workers = 2
+operators = ["ROR", "NEG", "RET", "AOR", "LCR", "CRP", "AUG", "BRK", "SDL"]
+arid = ["metrics.*", "tracer.*"]
+
+[tool.ruru.gate]
+tamper\-high = true
+fail\-first = true
+min\-score = 0.70
+min\-mutants = 5
+
+[tool.ruru.agents]
+bots = ["copilot\-swe\-agent[bot]", "claude[bot]", "devin\-ai\-integration[bot]", "cursor[bot]"]
+branches = ["claude/", "copilot/", "codex/", "cursor/", "devin/"]
+labels = ["agent"]
+.fi
+.RE
+.SH EXIT CODES
+.TP
+0
+passed, or advice only
+.TP
+1
+the gate failed
+.TP
+2
+a usage or environment problem: not a repository, no base, the import check or the baseline failed

@@ -65,33 +65,6 @@ jobs:
           python -m venv /tmp/clean
           /tmp/clean/bin/pip install dist/*.whl
           cd /tmp
-          /tmp/clean/bin/ruru-review --version
-          /tmp/clean/bin/ruru-review feed --times 2 --json
-          /tmp/clean/bin/ruru-review guide | head -3
-          /tmp/clean/bin/ruru-review man --raw | head -1
-
-  # Proves the template still works after "Use this template" and a rename.
-  rename:
-    needs: lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: "Checkout code"
-        uses: actions/checkout@v7
-
-      - name: "Set up Python"
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.15"
-
-      - name: "Rename the package the way a new repository would"
-        run: |
-          python scripts/rename.py acme_widgets
-          test -d src/acme_widgets && test ! -d src/ruru_review
-          test -f src/acme_widgets/data/acme-widgets.1 && test ! -e .claude-plugin
-
-      - name: "Install and run every check under the new name"
-        run: |
-          make init-dev
-          make man
-          make checks
-          acme-widgets status --json
+          /tmp/clean/bin/ruru --version
+          /tmp/clean/bin/ruru guide | head -3
+          /tmp/clean/bin/ruru man --raw | head -1

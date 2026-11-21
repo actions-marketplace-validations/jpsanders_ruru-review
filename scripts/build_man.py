@@ -1,8 +1,8 @@
 """
 Build the man page and the packaged manual from docs/MANUAL.md.
 
-docs/MANUAL.md is the one source. It is copied into the package, so ``ruru-review guide`` prints it, and converted
-to roff, so ``ruru-review man`` and ``man ruru-review`` show it.
+docs/MANUAL.md is the one source. It is copied into the package, so ``ruru guide`` prints it, and converted
+to roff, so ``ruru man`` and ``man ruru`` show it.
 
     python scripts/build_man.py           # write the packaged manual and the man page
     python scripts/build_man.py --check   # fail when either is out of date
@@ -13,7 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-PROG = "ruru-review"
+PROG = "ruru"
 PACKAGE = "ruru_review"
 ROOT = Path(__file__).resolve().parent.parent
 MANUAL = ROOT / "docs" / "MANUAL.md"

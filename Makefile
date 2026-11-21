@@ -107,11 +107,6 @@ build: clean
 	python -m build -o build/dist
 
 # Rename the package once, right after creating a repository from the template
-.PHONY: rename
-rename:
-	@test -n "$(NAME)" || (echo "usage: make rename NAME=your_package" && exit 1)
-	python scripts/rename.py $(NAME)
-
 .PHONY: build-docker
 build-docker:
 	@echo
