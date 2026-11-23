@@ -81,10 +81,12 @@ ignore_missing_imports = true
 profile = "black"
 line_length = 120
 known_first_party = ["ruru_review"]
+extend_skip = ["_version.py"]
 
 [tool.black]
 line-length = 120
 include = '\.pyi?$'
+extend-exclude = '_version\.py'
 exclude = '''
 /(
       venv
