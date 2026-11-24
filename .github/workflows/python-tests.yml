@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: "Checkout code"
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           lfs: ${{ inputs.enable-lfs }}
           fetch-depth: ${{ inputs.checkout-fetch-depth }}
